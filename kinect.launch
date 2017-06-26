@@ -1,0 +1,6 @@
+<launch>
+    <node name="static_tf" pkg="tf" type="static_transform_publisher" args="0 0 0 0 -1.5709 0 sense3d camera_link 100"/>
+    <node name="kinect_plane_fitter" type="check_planarity" pkg="plane_fitter" output="screen">
+        <remap from="/sense3d/scan" to="/camera/depth_registered/points"/>
+    </node>
+</launch>

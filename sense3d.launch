@@ -1,0 +1,3 @@
+<launch>
+    <node name="sense3d_plane_fitter" type="check_planarity" pkg="plane_fitter" output="screen"/>
+</launch>
