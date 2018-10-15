@@ -114,6 +114,7 @@ public:
         // Get parameters
         ros::param::param<double>("~max_distance",_max_distance,0.005);
         ros::param::param<double>("~min_percentage",_min_percentage,5);
+        ros::param::param<bool>("~color_pc_with_error",_color_pc_with_error,false);
 
         // Create dynamic reconfigure
         drCallback = boost::bind( &planeFitter::updateParameters, this, _1, _2);
@@ -129,6 +130,7 @@ public:
     void updateParameters(plane_fitter::algorithmParametersConfig& config, uint32_t level){
         _max_distance = config.max_distance/1000;
         _min_percentage = config.min_percentage_of_points;
+        _color_pc_with_error = config.paint_with_error;
     }
 
     void pointCloudCb(const sensor_msgs::PointCloud2::ConstPtr &msg){
@@ -154,7 +156,7 @@ public:
         seg.setOptimizeCoefficients (true);
         seg.setModelType (pcl::SACMODEL_PLANE);
         seg.setMethodType (pcl::SAC_RANSAC);
-        seg.setDistanceThreshold (_max_distance);
+        seg.setDistanceThreshold(_max_distance);
 
         // Create pointcloud to publish inliers
         pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud_pub(new pcl::PointCloud<pcl::PointXYZRGB>);
@@ -194,10 +196,10 @@ public:
 
             // Compute Standard deviation
             ColorMap cm(min_error,max_error);
-            double std(0);
+            double sigma(0);
             for (int i=0;i<inliers->indices.size();i++){
 
-                std += pow(err[i] - mean_error,2);
+                sigma += pow(err[i] - mean_error,2);
 
                 // Get Point
                 pcl::PointXYZ pt = cloud->points[inliers->indices[i]];
@@ -207,12 +209,16 @@ public:
                 pt_color.x = pt.x;
                 pt_color.y = pt.y;
                 pt_color.z = pt.z;
-                uint32_t rgb = cm.getColor(err[i]);
+                uint32_t rgb;
+                if (_color_pc_with_error)
+                    rgb = cm.getColor(err[i]);
+                else
+                    rgb = colors[n_planes].getColor();
                 pt_color.rgb = *reinterpret_cast<float*>(&rgb);
                 cloud_pub->points.push_back(pt_color);
 
             }
-            std = sqrt(std/inliers->indices.size());
+            sigma = sqrt(sigma/inliers->indices.size());
 
             // Extract inliers
             extract.setInputCloud(cloud);
@@ -223,8 +229,14 @@ public:
             cloud->swap(cloudF);
 
             // Display infor
-            ROS_INFO("%s: fitted plane %i: %fx+%fy+%fz+%f=0 (inliers: %zu/%i)",_name.c_str(),n_planes,coefficients->values[0],coefficients->values[1],coefficients->values[2],coefficients->values[3],inliers->indices.size(),original_size);
-            ROS_INFO("%s: mean error: %f(mm), standard deviation: %f (mm), max error: %f(mm)",_name.c_str(),mean_error,std,max_error);
+            ROS_INFO("%s: fitted plane %i: %fx%s%fy%s%fz%s%f=0 (inliers: %zu/%i)",
+                     _name.c_str(),n_planes,
+                     coefficients->values[0],(coefficients->values[1]>=0?"+":""),
+                     coefficients->values[1],(coefficients->values[2]>=0?"+":""),
+                     coefficients->values[2],(coefficients->values[3]>=0?"+":""),
+                     coefficients->values[3],
+                     inliers->indices.size(),original_size);
+            ROS_INFO("%s: mean error: %f(mm), standard deviation: %f (mm), max error: %f(mm)",_name.c_str(),mean_error,sigma,max_error);
             ROS_INFO("%s: poitns left in cloud %i",_name.c_str(),cloud->width*cloud->height);
 
             // Nest iteration
@@ -275,6 +287,7 @@ private:
     // Algorithm parameters
     double _min_percentage;
     double _max_distance;
+    bool _color_pc_with_error;
 
     // Colors
     std::vector<Color> colors;
